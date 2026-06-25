@@ -1,2 +1,5 @@
 dataset/
-需求.md
+项目汇报.md
+__pycache__/
+*.pyc
+.claude/
