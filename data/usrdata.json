@@ -1,0 +1,16 @@
+{
+    "Usr": {
+        "admin": "admin123"
+    },
+    "Setup": {
+        "model_path": "./model/model.xml",
+        "face_detect_method": "yolov5",
+        "yolo_model_name": "yolov5s",
+        "confidence_threshold": 0.5,
+        "recognition_threshold": 70,
+        "temp_limit": 37.2,
+        "dist_min": 10,
+        "dist_max": 120,
+        "auto_interval": 4
+    }
+}
