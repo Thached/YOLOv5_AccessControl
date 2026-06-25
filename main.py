@@ -1,7 +1,7 @@
 """
 智能门禁系统 - YOLOv5版 主程序入口
 =====================================
-- YOLOv5 (ONNX/PyTorch/Haar) 人脸检测
+- YOLOv5 (yolov5su.pt) 人脸检测
 - LBPH 特征提取 + 人脸识别
 - SQLite 数据库存储特征与通行记录
 - Qt GUI（预览 / 记录查询 / 系统设置）
@@ -177,7 +177,7 @@ class CameraThread(QThread):
 
 
 class FaceDetectThread(QThread):
-    """人脸检测 + 识别线程（Haar优先，与录入方式一致）"""
+    """人脸检测 + 识别线程（使用 yolov5su.pt）"""
     signal_frame = pyqtSignal(object)
 
     def __init__(self, detector, recognizer):
@@ -185,8 +185,6 @@ class FaceDetectThread(QThread):
         self.running = True
         self.detector = detector
         self.recognizer = recognizer
-        haar_path = 'data/haarcascade_frontalface_default.xml'
-        self.face_cascade = cv2.CascadeClassifier(haar_path) if os.path.exists(haar_path) else None
 
     def run(self):
         cam = cv2.VideoCapture(0)
@@ -195,8 +193,7 @@ class FaceDetectThread(QThread):
             if not ret:
                 continue
             try:
-                # 优先 Haar 精确检测（与录入方式一致）
-                faces = self._detect_faces(img)
+                faces = self.detector.detect(img)
                 names = []
                 for (x, y, w, h, conf) in faces:
                     cv2.rectangle(img, (x, y), (x + w, y + h), (255, 0, 0), 2)
@@ -219,25 +216,12 @@ class FaceDetectThread(QThread):
                 continue
         cam.release()
 
-    def _detect_faces(self, img):
-        """Haar 优先检测人脸，回退到 YOLOv5"""
-        faces = []
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        if self.face_cascade is not None:
-            haar_faces = self.face_cascade.detectMultiScale(
-                gray, scaleFactor=1.3, minNeighbors=5, minSize=(60, 60))
-            for (fx, fy, fw, fh) in haar_faces:
-                faces.append((fx, fy, fw, fh, 1.0))
-        if not faces:
-            faces = self.detector.detect(img)
-        return faces
-
     def stop(self):
         self.running = False
 
 
 class EnrollThread(QThread):
-    """人脸录入线程（Haar精确检测人脸 + 采集20张）"""
+    """人脸录入线程（使用 yolov5su.pt 检测人脸 + 采集20张）"""
     signal_frame = pyqtSignal(object)
     signal_status = pyqtSignal(str)
 
@@ -252,10 +236,6 @@ class EnrollThread(QThread):
         import datetime
         dataset_dir = os.path.join('dataset', self.name)
         os.makedirs(dataset_dir, exist_ok=True)
-
-        # 录入阶段使用 Haar 级联精确检测人脸（YOLOv5检测的是person全身，不适合近距离录入）
-        haar_path = 'data/haarcascade_frontalface_default.xml'
-        face_cascade = cv2.CascadeClassifier(haar_path) if os.path.exists(haar_path) else None
 
         cam = cv2.VideoCapture(0)
         count = 0
@@ -277,20 +257,9 @@ class EnrollThread(QThread):
                 # 引导圆
                 cv2.circle(img, (w // 2, h // 2), int(h / 2.5), (0, 255, 0), 3)
 
-                # 优先用 Haar 精确检测人脸（适合近距离录入），检测不到再用 YOLOv5
-                faces = []
-                if face_cascade is not None:
-                    haar_faces = face_cascade.detectMultiScale(
-                        gray, scaleFactor=1.3, minNeighbors=5, minSize=(60, 60))
-                    for (fx, fy, fw, fh) in haar_faces:
-                        if fx > x_min and fy > y_min and fx + fw < x_max and fy + fh < y_max:
-                            faces.append((fx, fy, fw, fh, 1.0))
-
-                # Haar没检测到 → 回退到 YOLOv5
-                if not faces:
-                    yolo_faces, _ = self.detector.detect_in_roi(
-                        img, x_min, y_min, x_max, y_max)
-                    faces = yolo_faces
+                # 使用 yolov5su.pt 检测人脸
+                faces, _ = self.detector.detect_in_roi(
+                    img, x_min, y_min, x_max, y_max)
 
                 if elapsed <= 5:
                     self.signal_status.emit(f'{5 - elapsed}秒后开始录入...')
@@ -344,14 +313,15 @@ class TrainThread(QThread):
         try:
             n, m = self.recognizer.train_from_dataset(
                 progress_cb=lambda msg: self.signal_status.emit(msg))
-            self.signal_status.emit('model done')
             self.signal_status.emit(f'训练完成：{n}人，{m}张图片')
+            time.sleep(2)
+            self.signal_status.emit('model done')
         except Exception as e:
             self.signal_status.emit(f'训练失败：{e}')
 
 
 class AutoRunThread(QThread):
-    """自动运行线程（门禁核心）"""
+    """自动运行线程（门禁核心，使用 yolov5su.pt）"""
     signal_frame = pyqtSignal(object)
     signal_status = pyqtSignal(str)
 
@@ -363,8 +333,6 @@ class AutoRunThread(QThread):
         self.hw = hardware
         self.db = db
         self.state = state
-        haar_path = 'data/haarcascade_frontalface_default.xml'
-        self.face_cascade = cv2.CascadeClassifier(haar_path) if os.path.exists(haar_path) else None
 
     def run(self):
         temp_limit = self.db.get_setting_float('temp_limit', 37.2)
@@ -433,8 +401,8 @@ class AutoRunThread(QThread):
         self.state.temperature = temperature
         self.state.distance = distance
 
-        # 优先 Haar 级联精确检测人脸（与录入方式一致，确保裁剪区域匹配训练数据）
-        faces = self._detect_faces_haar_first(img, x_min, y_min, x_max, y_max)
+        # 使用 yolov5su.pt 检测人脸
+        faces, _ = self.detector.detect_in_roi(img, x_min, y_min, x_max, y_max)
 
         rid = None
         if distance < dist_min:
@@ -486,21 +454,6 @@ class AutoRunThread(QThread):
             say_zh('识别失败次数过多，系统已锁定')
             self.state.fail_count = 0
 
-    def _detect_faces_haar_first(self, img, x_min, y_min, x_max, y_max):
-        """Haar 精确检测人脸（与录入方式一致），检测不到再用 YOLOv5"""
-        faces = []
-        if self.face_cascade is not None:
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            haar_faces = self.face_cascade.detectMultiScale(
-                gray, scaleFactor=1.3, minNeighbors=5, minSize=(60, 60))
-            for (fx, fy, fw, fh) in haar_faces:
-                if fx > x_min and fy > y_min and fx + fw < x_max and fy + fh < y_max:
-                    faces.append((fx, fy, fw, fh, 1.0))
-        # Haar 没检测到 → YOLOv5 作为后备
-        if not faces:
-            faces, _ = self.detector.detect_in_roi(img, x_min, y_min, x_max, y_max)
-        return faces
-
     def stop(self):
         self.running = False
 
@@ -540,14 +493,9 @@ class AccessControlApp:
         self.state = AppState()
         self._active_thread = None
 
-        # 初始化人脸检测器和识别器
-        detect_method = self.db.get_setting('detect_method') or 'yolov5'
-        onnx_path = self.db.get_setting('onnx_model_path') or 'model/yolov5s.onnx'
-        model_name = self.db.get_setting('model_name') or 'yolov5s'
+        # 初始化人脸检测器和识别器（统一使用 yolov5su.pt）
         conf = self.db.get_setting_float('confidence_threshold', 0.5)
-
-        self.detector = FaceDetector(
-            onnx_path=onnx_path, model_name=model_name, confidence=conf)
+        self.detector = FaceDetector(confidence=conf)
         self.recognizer = FaceRecognizer(db=self.db)
         self.recognizer.load_names()
         model_path = self.db.get_setting('model_path') or './model/model.xml'
@@ -571,12 +519,9 @@ class AccessControlApp:
         w.train_callback = self._handle_train
 
     def _update_backend_label(self):
-        backend = self.detector.backend.upper()
-        colors = {'ONNX': '#a6e3a1', 'ULTRALYTICS': '#a6e3a1',
-                  'TORCH': '#a6e3a1', 'HAAR': '#fab387'}
-        self.window.set_backend_label(f'检测: {backend}')
+        self.window.set_backend_label('检测: YOLOv5su')
         self.window.backend_label.setStyleSheet(
-            f'color: {colors.get(self.detector.backend.upper(), "#888")}; font-size: 13px;')
+            'color: #a6e3a1; font-size: 13px;')
 
     # ---- 管理操作 ----
 
@@ -685,7 +630,7 @@ class AccessControlApp:
             self._active_thread = CameraThread()
             self._active_thread.start()
             self._active_thread.signal_frame.connect(w.set_video_pixmap)
-            w._disable_fn_buttons()
+            w._disable_fn_buttons(except_act=w.act_camera)
         else:
             if self._active_thread:
                 self._active_thread.stop()
@@ -702,7 +647,7 @@ class AccessControlApp:
             self._active_thread = FaceDetectThread(self.detector, self.recognizer)
             self._active_thread.start()
             self._active_thread.signal_frame.connect(w.set_video_pixmap)
-            w._disable_fn_buttons()
+            w._disable_fn_buttons(except_act=w.act_face_detect)
         else:
             if self._active_thread:
                 self._active_thread.stop()
@@ -721,7 +666,7 @@ class AccessControlApp:
                 self._active_thread.start()
                 self._active_thread.signal_frame.connect(w.set_video_pixmap)
                 self._active_thread.signal_status.connect(w.set_result_text)
-                w._disable_fn_buttons()
+                w._disable_fn_buttons(except_act=w.act_enroll)
             else:
                 w.act_enroll.setText('录入人脸数据')
         else:

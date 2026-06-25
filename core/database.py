@@ -52,13 +52,13 @@ DDL_STATEMENTS = [
 
 DEFAULT_SETTINGS = {
     'detect_method': 'yolov5',
-    'model_name': 'yolov5s',
+    'model_name': 'yolov5su',
     'confidence_threshold': '0.5',
     'recognition_threshold': '70',
     'temp_limit': '37.2',
     'dist_min': '10',
     'dist_max': '120',
-    'auto_interval': '4',
+    'auto_interval': '3',
     'gate_delay': '3',
     'retry_limit': '5',
     'lockout_duration': '5',

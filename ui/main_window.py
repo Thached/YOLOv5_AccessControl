@@ -574,14 +574,14 @@ class MainWindow(QtWidgets.QMainWindow):
         det_form.setSpacing(8)
 
         self.setting_detect_method = QtWidgets.QComboBox()
-        self.setting_detect_method.addItems(['yolov5', 'haar'])
+        self.setting_detect_method.addItems(['yolov5'])
         det_form.addRow('检测方法:', self._row_with_hint(
-            self.setting_detect_method, 'YOLOv5精度高但需要GPU/ONNX；Haar轻量可在纯CPU上运行'))
+            self.setting_detect_method, '统一使用 yolov5su.pt 模型进行人脸检测'))
 
         self.setting_model_name = QtWidgets.QComboBox()
-        self.setting_model_name.addItems(['yolov5n', 'yolov5s', 'yolov5m', 'yolov5l'])
+        self.setting_model_name.addItems(['yolov5su'])
         det_form.addRow('YOLO模型:', self._row_with_hint(
-            self.setting_model_name, 'n=最轻量(快)/s=平衡/m=中等/l=最准(慢)，嵌入式平台推荐n或s'))
+            self.setting_model_name, '统一使用 yolov5su.pt，平衡精度与速度'))
 
         self.setting_conf_threshold = QtWidgets.QDoubleSpinBox()
         self.setting_conf_threshold.setRange(0.1, 1.0)
@@ -780,7 +780,12 @@ class MainWindow(QtWidgets.QMainWindow):
     def set_result_text(self, text):
         if text == 'model done':
             self.result_label.setText('')
+            self.video_label.clear()
+            self.video_label.setText('摄像头未启动')
             self._restore_all_buttons()
+            self.act_camera.setText('开启摄像头')
+            self.act_face_detect.setText('启动人脸识别')
+            self.act_enroll.setText('录入人脸数据')
         else:
             self.result_label.setText(text if text else '')
 
@@ -791,9 +796,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.act_register.setEnabled(True)
         self.act_signout.setEnabled(True)
 
-    def _disable_fn_buttons(self):
-        for act in [self.act_face_detect, self.act_enroll, self.act_train]:
-            act.setEnabled(False)
+    def _disable_fn_buttons(self, except_act=None):
+        for act in [self.act_camera, self.act_face_detect, self.act_enroll,
+                     self.act_train]:
+            if act is not except_act:
+                act.setEnabled(False)
 
     def _disable_all(self):
         self._disable_fn_buttons()
@@ -1084,7 +1091,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if reply != QtWidgets.QMessageBox.Ok:
             return
         defaults = {
-            'detect_method': 'yolov5', 'model_name': 'yolov5s',
+            'detect_method': 'yolov5', 'model_name': 'yolov5su',
             'confidence_threshold': '0.5', 'recognition_threshold': '70',
             'temp_limit': '37.2', 'dist_min': '10', 'dist_max': '120',
             'gate_delay': '3', 'auto_interval': '4', 'retry_limit': '5',
