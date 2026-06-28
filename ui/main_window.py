@@ -782,6 +782,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.result_label.setText('')
             self.video_label.clear()
             self.video_label.setText('摄像头未启动')
+            self.fps_label.setText('')
             self._restore_all_buttons()
             self.act_camera.setText('开启摄像头')
             self.act_face_detect.setText('启动人脸识别')

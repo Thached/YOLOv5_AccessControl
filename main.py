@@ -21,7 +21,7 @@ import cv2
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 from PyQt5.QtWidgets import *
-from PyQt5.QtCore import QThread, pyqtSignal, Qt
+from PyQt5.QtCore import QThread, QTimer, pyqtSignal, Qt
 from PyQt5.QtGui import QImage, QPixmap
 
 from core.database import Database
@@ -507,6 +507,11 @@ class AccessControlApp:
         self._bind_callbacks()
         self._update_backend_label()
 
+        # FPS 刷新定时器
+        self._fps_timer = QTimer()
+        self._fps_timer.timeout.connect(self._update_fps)
+        self._fps_timer.start(500)
+
     def _bind_callbacks(self):
         w = self.window
         w.login_callback = self._handle_login
@@ -519,9 +524,21 @@ class AccessControlApp:
         w.train_callback = self._handle_train
 
     def _update_backend_label(self):
-        self.window.set_backend_label('检测: YOLOv5su')
+        backend = self.detector.backend
+        if backend == 'ultralytics':
+            label = '检测: YOLOv5su (Ultralytics)'
+        elif backend == 'onnx':
+            label = '检测: YOLOv5su (ONNX)'
+        else:
+            label = f'检测: YOLOv5su ({backend})'
+        self.window.set_backend_label(label)
         self.window.backend_label.setStyleSheet(
             'color: #a6e3a1; font-size: 13px;')
+
+    def _update_fps(self):
+        fps = self.detector.fps
+        if fps > 0:
+            self.window.update_fps(fps)
 
     # ---- 管理操作 ----
 
