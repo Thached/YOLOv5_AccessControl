@@ -3,3 +3,6 @@ dataset/
 __pycache__/
 *.pyc
 .claude/
+data/access_control.db
+data/*.db-shm
+data/*.db-wal
